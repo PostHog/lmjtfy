@@ -27,6 +27,11 @@ const ledgerEmpty = document.getElementById("ledger-empty");
 const ledgerLive = document.getElementById("ledger-live");
 const sortButtons = [...document.querySelectorAll(".ledger__sort-btn")];
 
+/** Optional chaining throughout: analytics must never break an answer. */
+function track(event, properties) {
+  window.posthog?.capture?.(event, properties);
+}
+
 const STAGE_COPY = {
   reading: "reading the question",
   matching: "checking if anyone asked this",
@@ -103,6 +108,7 @@ function renderVerdict(question, detail) {
 /** kind is "refusal", "limit" or "error" — a declined question, a spent
     allowance and a broken request should not look like the same event. */
 function showNotice({ kind = "error", title = "Something broke", body = "" }) {
+  track("question refused", { kind, reason: title });
   notice.className = `notice notice--${kind}`;
   noticeTitle.textContent = title;
   noticeBody.textContent = body;
@@ -286,7 +292,8 @@ async function* sseEvents(response) {
   }
 }
 
-async function ask(question) {
+async function ask(question, source = "typed") {
+  track("question submitted", { source });
   setBusy(true);
   clearReadout();
   showStatus(STAGE_COPY.reading);
@@ -313,14 +320,24 @@ async function ask(question) {
       } else if (event === "answer") {
         answered = true;
         hideStatus();
-        const detail =
-          data.match === "semantic"
-            ? `Grouped with an earlier wording of the same question.`
+        const detail = data.question.inverted
+          ? "You asked the reverse of a question Jev has already answered, so this is that answer flipped."
+          : data.match === "semantic"
+            ? "Grouped with an earlier wording of the same question."
             : data.match === "exact" || data.match === "alias"
-              ? `Already asked. Jev has not changed its mind.`
+              ? "Already asked. Jev has not changed its mind."
               : null;
         renderVerdict(data.question, detail);
-        liftToTop(data.question);
+        liftToTop(data.reading ?? data.question);
+        track("question answered", {
+          match: data.match,
+          inverted: Boolean(data.question.inverted),
+          topic: data.question.topic,
+          verdict: data.question.verdict,
+          probability: data.question.noul,
+          ask_count: data.question.askCount,
+          settledness: data.question.settledness,
+        });
         input.value = "";
         history.replaceState(null, "", `?q=${encodeURIComponent(data.question.text)}`);
       } else if (event === "notice") {
@@ -395,7 +412,7 @@ async function askFromUrl() {
   await sleep(reducedMotion ? 0 : 450);
   await typeInto(question);
   await sleep(reducedMotion ? 0 : 280);
-  await ask(question);
+  await ask(question, "link");
   return true;
 }
 

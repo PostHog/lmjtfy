@@ -64,10 +64,10 @@ const gateQuestions = {
     },
   ),
   targets_individual: noul(
-    "Does `submission` ask for a personal judgment about a specific private individual — a named or unmistakably identified real person who is not a public figure?",
+    "Does `submission` ask for a judgment about a particular real person, or about somebody's personal name?",
     {
-      true: "Singles out a private person and asks something evaluative about them, such as 'is my coworker Dave lazy' or 'is the girl in flat 3 attractive'.",
-      false: "Asks about a public figure in their public role, a group, a company, an idea, an object, a fictional character, or nobody in particular. Asking about the person submitting the question is also false.",
+      true: "Names or unmistakably identifies a real person, famous or not, living or dead, and asks for any judgment that touches them: their character, looks, talent, competence, worth, or choices. Also true when the subject is a personal first name or surname in its own right, such as 'is Rafael a good name' or 'is Chloe a pretty name', because a real person wears the answer either way.",
+      false: "Asks about a group, a company, a product, a programming language, a place, a fictional character, an idea, an object, a work referred to by its own title, or nobody in particular. A proper noun that names a language, a city, a brand, a band or a product is not a personal name.",
     },
   ),
   severity: score(
@@ -91,7 +91,7 @@ const GATE_POLICY = {
   minSfw: 0.5,
   minPg13: 0.5,
   maxInjection: 0.6,
-  maxTargetsIndividual: 0.7,
+  maxTargetsIndividual: 0.6,
   maxSeverity: 1.6,
 } as const;
 
@@ -158,9 +158,19 @@ export async function runGate(client: TypeSafeClient, submission: string): Promi
  */
 const SAME_QUESTION_THRESHOLD = 0.8;
 
+/**
+ * "Does X belong on Y" and "does X NOT belong on Y" are one question asked from
+ * both ends, so they share a row and the negated wording is shown the flipped
+ * probability. Measured: true inversions score 0.78 and up, while pairs that
+ * merely mean the same thing top out at 0.48.
+ */
+const OPPOSITE_QUESTION_THRESHOLD = 0.7;
+
 export interface SameMatch {
   id: string;
   similarity: number;
+  /** 1 when the wordings agree, -1 when the incoming question is the inverse. */
+  polarity: 1 | -1;
 }
 
 /**
@@ -181,28 +191,46 @@ export async function findSameQuestion(
   candidates.forEach((candidate, i) => {
     const key = `c${i}`;
     candidateTexts[key] = candidate.text;
+
     questions[`same_${i}`] = noul(
       `\`incoming\` is a new yes/no question. \`candidates.${key}\` is a yes/no question that has already been answered. Do they ask for the same verdict, so that the correct yes-or-no answer to one is also the correct answer to the other?`,
       {
         true: "The two seek the same verdict, so a correct yes to one is a correct yes to the other. Wording, politeness, slang, word order, and incidental extra detail may all differ. 'Is X better than Y' and 'should X be used instead of Y' are the same question.",
-        false: "Opposite polarity, so yes to one means no to the other — 'is X good' and 'is X bad' are NOT the same question. Or a different subject. Or a different judgment about the same subject, such as whether X is popular versus whether X is correct.",
+        false: "Opposite polarity, so yes to one means no to the other. Or a different subject. Or a different judgment about the same subject, such as whether X is popular versus whether X is correct.",
+      },
+    );
+
+    questions[`opp_${i}`] = noul(
+      `\`incoming\` is a new yes/no question. \`candidates.${key}\` is a yes/no question that has already been answered. Are they the same underlying question with inverted polarity, so that a correct yes to one means a correct no to the other?`,
+      {
+        true: "The same underlying question asked from the opposite end, so a correct yes to one means a correct no to the other. Typically one negates the other, or uses the antonym, or swaps the two things being compared.",
+        false: "Not an inversion. Either they mean the same thing and share an answer, or they are about different subjects or different judgments entirely.",
       },
     );
   });
 
-  const { answers, usage } = await client.systemOne({
+  const { answers } = await client.systemOne({
     state: { incoming, candidates: candidateTexts },
     questions,
   });
-  logUsage(`match:${candidates.length}`, usage);
 
+  // Agreement wins over inversion: a pair that reads as the same question is
+  // the same question, even if it also scores something on the opposite axis.
   let best: SameMatch | null = null;
   for (const [i, candidate] of candidates.entries()) {
-    const answer = answers[`same_${i}`];
-    if (!answer || answer.type !== "noul") continue;
-    if (answer.noul < SAME_QUESTION_THRESHOLD) continue;
-    if (best === null || answer.noul > best.similarity) {
-      best = { id: candidate.id, similarity: answer.noul };
+    const same = answers[`same_${i}`];
+    if (same?.type !== "noul" || same.noul < SAME_QUESTION_THRESHOLD) continue;
+    if (best === null || same.noul > best.similarity) {
+      best = { id: candidate.id, similarity: same.noul, polarity: 1 };
+    }
+  }
+  if (best) return best;
+
+  for (const [i, candidate] of candidates.entries()) {
+    const opposite = answers[`opp_${i}`];
+    if (opposite?.type !== "noul" || opposite.noul < OPPOSITE_QUESTION_THRESHOLD) continue;
+    if (best === null || opposite.noul > best.similarity) {
+      best = { id: candidate.id, similarity: opposite.noul, polarity: -1 };
     }
   }
 

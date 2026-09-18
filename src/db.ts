@@ -17,15 +17,16 @@ export async function findByNormalized(db: D1Database, normalized: string) {
     .first<QuestionRow>();
 }
 
+/** Returns the canonical question plus which way round the alias was asked. */
 export async function findByAlias(db: D1Database, normalized: string) {
   return db
     .prepare(
-      `SELECT q.* FROM question_aliases a
+      `SELECT q.*, a.polarity FROM question_aliases a
        JOIN questions q ON q.id = a.question_id
        WHERE a.normalized = ?`,
     )
     .bind(normalized)
-    .first<QuestionRow>();
+    .first<QuestionRow & { polarity: number }>();
 }
 
 export async function findById(db: D1Database, id: string) {
@@ -96,15 +97,25 @@ export async function recordRepeatAsk(db: D1Database, id: string, at: number): P
 
 export async function insertAlias(
   db: D1Database,
-  alias: { normalized: string; questionId: string; text: string; similarity: number; at: number },
+  alias: {
+    normalized: string;
+    questionId: string;
+    text: string;
+    similarity: number;
+    polarity: number;
+    at: number;
+  },
 ): Promise<void> {
   await db
     .prepare(
-      `INSERT INTO question_aliases (normalized, question_id, text, similarity, created_at)
-       VALUES (?, ?, ?, ?, ?)
+      `INSERT INTO question_aliases (normalized, question_id, text, similarity, polarity, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT(normalized) DO NOTHING`,
     )
-    .bind(alias.normalized, alias.questionId, alias.text, alias.similarity, alias.at)
+    .bind(
+      alias.normalized, alias.questionId, alias.text,
+      alias.similarity, alias.polarity, alias.at,
+    )
     .run();
 }
 
@@ -150,16 +161,6 @@ export async function consumeDailyQuota(
 
   const used = row?.used ?? 1;
   return { allowed: used <= quota, used, quota };
-}
-
-export async function recordRejection(db: D1Database, day: string, reason: string): Promise<void> {
-  await db
-    .prepare(
-      `INSERT INTO gate_rejections (day, reason, count) VALUES (?, ?, 1)
-       ON CONFLICT(day, reason) DO UPDATE SET count = count + 1`,
-    )
-    .bind(day, reason)
-    .run();
 }
 
 /** Quota rows are only meaningful for the current day. */

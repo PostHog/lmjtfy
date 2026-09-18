@@ -58,7 +58,7 @@ the only one.
 ## Stack
 
 - **Cloudflare Workers** — API and static asset serving (`src/index.ts`)
-- **D1** — questions, aliases, FTS5 index, per-IP quota, rejection counters
+- **D1** — questions, aliases, FTS5 index, per-IP quota
 - **Durable Object** — one `ReadingsHub` fans new readings out to every open page
 - **TypeSafe JS SDK** — `@typesafe-ai/sdk`, which supports the Workers runtime
 - No frontend framework and no build step. One HTML page, one stylesheet, one
@@ -104,9 +104,10 @@ The page distinguishes three reasons an answer might not arrive, because they
 are not the same event and should not look alike: a **refusal** (Jev declined
 the question), a **limit** (an allowance ran out), and an **error** (our fault).
 
-IPs are never stored in the clear — only a salted SHA-256 hash, in rows pruned
-after three days. Blocked submissions are counted by reason; their text is not
-retained.
+IPs are never stored in the clear, only a salted SHA-256 hash, in rows pruned
+after three days. Blocked submissions are not stored at all: the `question
+refused` event in PostHog records the reason, and nothing about a refused
+question reaches the database.
 
 ## Development
 

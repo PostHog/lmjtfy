@@ -37,8 +37,8 @@ const GATE_NOTICES: Record<string, Notice> = {
   },
   private_individual: {
     kind: "refusal",
-    title: "Not about a private person",
-    body: "Jev does not hand down verdicts on people who did not ask for one.",
+    title: "Not about people",
+    body: "Jev does not hand down verdicts on people, famous or otherwise, or on their names. Ask about something instead of someone.",
   },
   harmful: {
     kind: "refusal",
@@ -139,7 +139,7 @@ async function handleApi(
     const topic = url.searchParams.get("topic") ?? undefined;
     const limit = clampInt(url.searchParams.get("limit"), 30, 1, 60);
     const rows = await db.feed(env.DB, { sort, topic, limit });
-    return json({ questions: rows.map(present) }, 200, { "cache-control": "public, max-age=3" });
+    return json({ questions: rows.map((row) => present(row)) }, 200, { "cache-control": "public, max-age=3" });
   }
 
   const questionMatch = url.pathname.match(/^\/api\/question\/([a-f0-9]{32})$/);
@@ -206,18 +206,20 @@ async function runAsk({ env, ctx, stream, raw, normalized, ipHash }: AskContext)
 
   try {
     // Exact repeats never reach Jev — same question, same answer, higher count.
-    const exact =
-      (await db.findByNormalized(env.DB, normalized)) ??
-      (await db.findByAlias(env.DB, normalized));
+    const direct = await db.findByNormalized(env.DB, normalized);
+    const aliased = direct ? null : await db.findByAlias(env.DB, normalized);
+    const exact = direct ?? aliased;
 
     if (exact) {
       await db.recordRepeatAsk(env.DB, exact.id, now);
-      const reading = present({ ...exact, ask_count: exact.ask_count + 1, last_asked_at: now });
+      const bumped = { ...exact, ask_count: exact.ask_count + 1, last_asked_at: now };
+      const polarity: 1 | -1 = aliased?.polarity === -1 ? -1 : 1;
       stream.send("answer", {
-        question: reading,
-        match: (exact.normalized === normalized ? "exact" : "alias") satisfies MatchKind,
+        question: present(bumped, polarity, raw),
+        reading: present(bumped),
+        match: (direct ? "exact" : "alias") satisfies MatchKind,
       });
-      ctx.waitUntil(publish(env, reading));
+      ctx.waitUntil(publish(env, present(bumped)));
       stream.close();
       return;
     }
@@ -249,7 +251,6 @@ async function runAsk({ env, ctx, stream, raw, normalized, ipHash }: AskContext)
     const gate = await runGate(client, raw);
 
     if (!gate.ok) {
-      ctx.waitUntil(db.recordRejection(env.DB, day, gate.reason ?? "unknown"));
       stream.send("notice", GATE_NOTICES[gate.reason ?? ""] ?? UNKNOWN_REFUSAL);
       stream.close();
       return;
@@ -268,21 +269,23 @@ async function runAsk({ env, ctx, stream, raw, normalized, ipHash }: AskContext)
             questionId: existing.id,
             text: raw,
             similarity: same.similarity,
+            polarity: same.polarity,
             at: now,
           });
           await db.recordRepeatAsk(env.DB, existing.id, now);
-          const reading = present({
+          const bumped = {
             ...existing,
             ask_count: existing.ask_count + 1,
             last_asked_at: now,
-          });
+          };
           stream.send("answer", {
-            question: reading,
+            question: present(bumped, same.polarity, raw),
+            reading: present(bumped),
             match: "semantic" satisfies MatchKind,
             askedAs: raw,
             similarity: same.similarity,
           });
-          ctx.waitUntil(publish(env, reading));
+          ctx.waitUntil(publish(env, present(bumped)));
           stream.close();
           return;
         }
@@ -307,7 +310,11 @@ async function runAsk({ env, ctx, stream, raw, normalized, ipHash }: AskContext)
     };
 
     await db.insertQuestion(env.DB, row);
-    stream.send("answer", { question: present(row), match: "new" satisfies MatchKind });
+    stream.send("answer", {
+      question: present(row),
+      reading: present(row),
+      match: "new" satisfies MatchKind,
+    });
     ctx.waitUntil(publish(env, present(row)));
   } catch (err) {
     console.error("ask failed", err);
@@ -340,15 +347,23 @@ function upstreamNotice(err: unknown): Notice {
   };
 }
 
-/** Shape sent to the browser. Normalization keys stay server-side. */
-function present(row: QuestionRow) {
+/**
+ * Shape sent to the browser. Normalization keys stay server-side.
+ *
+ * `polarity` of -1 means the visitor asked the inverse of the stored question,
+ * so they get their own wording and the flipped probability. The bucket labels
+ * are symmetric about 0.5, so the flipped verdict is the exact mirror.
+ */
+function present(row: QuestionRow, polarity: 1 | -1 = 1, asText?: string) {
+  const noul = polarity === -1 ? 1 - row.noul : row.noul;
   return {
     id: row.id,
-    text: row.text,
-    noul: Number(row.noul.toFixed(4)),
-    verdict: row.verdict || verdictLabel(row.noul),
+    text: polarity === -1 && asText ? asText : row.text,
+    noul: Number(noul.toFixed(4)),
+    verdict: polarity === -1 ? verdictLabel(noul) : row.verdict || verdictLabel(row.noul),
     topic: row.topic,
     settledness: Number(row.settledness.toFixed(2)),
+    inverted: polarity === -1,
     askCount: row.ask_count,
     createdAt: row.created_at,
     lastAskedAt: row.last_asked_at,
@@ -377,8 +392,8 @@ async function serveAsset(request: Request, env: Env, url: URL): Promise<Respons
       // Positions on the gauge and the reading dots are inline custom
       // properties; without this CSP collapses every one of them to zero.
       "style-src 'self' 'unsafe-inline'",
-      "script-src 'self' https://static.cloudflareinsights.com",
-      "connect-src 'self' https://cloudflareinsights.com",
+      "script-src 'self' https://static.cloudflareinsights.com https://internal-c.posthog.com",
+      "connect-src 'self' https://cloudflareinsights.com https://internal-c.posthog.com",
       "frame-ancestors 'none'",
       "base-uri 'none'",
       "form-action 'none'",
