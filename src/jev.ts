@@ -66,12 +66,16 @@ const gateQuestions = {
     },
   ),
   severity: score(
-    "How harmful would it be for a public website to publish a blunt yes-or-no verdict on `submission`?",
+    // Scored on consequence, not topic. Asking about the topic of health or
+    // money is not the same as asking someone to bet their health or money on
+    // the answer, and an earlier rubric that keyed on subject matter blocked
+    // "is dark mode better for your eyes" at 1.71.
+    "If a public website published a blunt yes-or-no verdict on `submission`, and that verdict happened to be WRONG, how much real-world harm would follow?",
     [
-      "Harmless. Taste, trivia, or an everyday opinion. A verdict either way hurts nobody.",
-      "Mildly sensitive. Touches politics, religion, identity, or strong personal preference. Some readers would find a verdict pointed, but nobody is harmed by it.",
-      "Genuinely risky. Invites a yes/no on a medical, legal, financial, or safety decision, or on a real person's character, where a confident wrong answer could lead someone astray.",
-      "Seriously harmful. Seeks endorsement of violence, self-harm, crime, harassment, or contempt for a group of people.",
+      "None. Taste, trivia, curiosity, or everyday opinion. A wrong answer costs a reader nothing. General-interest questions about health, money, law or technology belong here when nobody would act on the answer alone — 'is dark mode better for your eyes', 'is renting cheaper than buying'.",
+      "Minor. Touches politics, religion, or identity, or mildly annoys someone. A reader might be offended or mildly misled, but suffers no concrete injury.",
+      "Real. The question seeks a go/no-go on this reader's own medical, legal, financial or physical-safety decision, where acting on a wrong answer could actually hurt them — 'should I stop taking my medication', 'is it safe to drive after four drinks'.",
+      "Severe. Seeks endorsement of violence, self-harm, crime, harassment, or contempt for a group of people.",
     ],
   ),
 } as const;
