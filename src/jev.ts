@@ -141,7 +141,12 @@ export async function runGate(client: TypeSafeClient, submission: string): Promi
 /* Stage 2: semantic grouping                                          */
 /* ------------------------------------------------------------------ */
 
-const SAME_QUESTION_THRESHOLD = 0.85;
+/**
+ * Measured against real pairs: rewordings land at 0.87 and above, while
+ * unrelated questions and inverted polarity land at 0.10 and below. The
+ * threshold sits in that gap, biased low enough to catch genuine rewordings.
+ */
+const SAME_QUESTION_THRESHOLD = 0.8;
 
 export interface SameMatch {
   id: string;
@@ -167,10 +172,10 @@ export async function findSameQuestion(
     const key = `c${i}`;
     candidateTexts[key] = candidate.text;
     questions[`same_${i}`] = noul(
-      `\`incoming\` is a new yes/no question. \`candidates.${key}\` is a yes/no question that has already been answered. Are they the same question in different words, such that the correct yes-or-no answer to one is necessarily the correct answer to the other?`,
+      `\`incoming\` is a new yes/no question. \`candidates.${key}\` is a yes/no question that has already been answered. Do they ask for the same verdict, so that the correct yes-or-no answer to one is also the correct answer to the other?`,
       {
-        true: "Same subject and same judgment, differing only in wording, politeness, word order, or level of slang.",
-        false: "Different subject, or a different judgment about the same subject, or opposite polarity — 'is X good' and 'is X bad' are NOT the same question. Also false when one is meaningfully narrower or broader than the other, so the answers could diverge.",
+        true: "The two seek the same verdict, so a correct yes to one is a correct yes to the other. Wording, politeness, slang, word order, and incidental extra detail may all differ. 'Is X better than Y' and 'should X be used instead of Y' are the same question.",
+        false: "Opposite polarity, so yes to one means no to the other — 'is X good' and 'is X bad' are NOT the same question. Or a different subject. Or a different judgment about the same subject, such as whether X is popular versus whether X is correct.",
       },
     );
   });
