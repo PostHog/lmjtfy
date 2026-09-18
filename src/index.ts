@@ -15,6 +15,11 @@ const MIN_LEN = 3;
 const MAX_LEN = 280;
 
 const GATE_NOTICES: Record<string, Notice> = {
+  not_english: {
+    kind: "refusal",
+    title: "English only",
+    body: "Jev is at its most reliable in English, so English is all it takes for now.",
+  },
   not_yes_no: {
     kind: "refusal",
     title: "Not a yes or no question",

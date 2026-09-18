@@ -16,11 +16,12 @@ An ask runs through up to three stages, each a separate System One request. All
 questions within a stage are independent judgments over the same state, so they
 run in parallel.
 
-**1. The gate** (`src/jev.ts`, `runGate`) — hidden from the visitor. Six parallel
+**1. The gate** (`src/jev.ts`, `runGate`) — hidden from the visitor. Nine parallel
 judgments decide whether the submission is answerable and publishable:
 
 | Question | Type | Blocks when |
 | --- | --- | --- |
+| `english` | Noul | below 0.60 — not written in English |
 | `yes_no` | Noul | below 0.55 — not answerable with yes or no, including "A or B" pick-one questions |
 | `sfw` | Noul | below 0.50 — not safe for a work screen |
 | `pg13` | Noul | below 0.50 — beyond a PG-13 rating |
@@ -28,6 +29,12 @@ judgments decide whether the submission is answerable and publishable:
 | `market` | Noul | above 0.60 — would read as investment advice or move a price |
 | `about_person` + `famous_person` | Noul | a person is judged (above 0.60) *and* is not unmistakably one public figure (below 0.60) |
 | `severity` | Score | above 1.6 — publishing a verdict could do real harm |
+
+English is checked first, because telling someone writing in Spanish that their
+question is not a yes/no question helps nobody. Jev's accuracy is highest in
+English, so a verdict on anything else would be less trustworthy than it looks.
+Loanwords and foreign names do not count against it: "is jamon iberico
+overrated" scores 0.99 while a full Spanish sentence scores 0.01.
 
 The two person questions are deliberately separate and composed in code, because
 fame is not the test: identifiability is. "Musk" points at one man and is

@@ -35,6 +35,13 @@ export function jevClient(env: Env): TypeSafeClient {
 /* ------------------------------------------------------------------ */
 
 const gateQuestions = {
+  english: noul(
+    "Is `submission` written in English?",
+    {
+      true: "An English sentence. Borrowed words, foreign dish names, place names, brand names, people's names, and code or product identifiers do not make it non-English: 'is jamon iberico overrated', 'is schadenfreude bad' and 'should I use Node.js' are all English.",
+      false: "Written wholly or mostly in another language, so that an English speaker could not read it as an English sentence. A question in Spanish, French, German, Portuguese, Japanese, Chinese or Russian is false even when it names something English.",
+    },
+  ),
   yes_no: noul(
     "The text in `submission` was typed by a visitor into a website that answers yes/no questions. Is `submission` something that can be sensibly answered with just yes or no?",
     {
@@ -101,6 +108,7 @@ const gateQuestions = {
 
 /** Thresholds are policy, kept out of the questions so they can be tuned alone. */
 const GATE_POLICY = {
+  minEnglish: 0.6,
   minYesNo: 0.55,
   minSfw: 0.5,
   minPg13: 0.5,
@@ -113,6 +121,7 @@ const GATE_POLICY = {
 } as const;
 
 export type GateReason =
+  | "not_english"
   | "not_yes_no"
   | "not_sfw"
   | "not_pg13"
@@ -125,6 +134,7 @@ export interface GateResult {
   ok: boolean;
   reason?: GateReason;
   signals: {
+    english: number;
     yes_no: number;
     sfw: number;
     pg13: number;
@@ -144,6 +154,7 @@ export async function runGate(client: TypeSafeClient, submission: string): Promi
   logUsage("gate", usage);
 
   const signals = {
+    english: answers.english.noul,
     yes_no: answers.yes_no.noul,
     sfw: answers.sfw.noul,
     pg13: answers.pg13.noul,
@@ -163,7 +174,8 @@ export async function runGate(client: TypeSafeClient, submission: string): Promi
   // someone their question is not a yes/no question is more actionable than
   // telling them it scored 0.4 on a rubric they cannot see.
   const reason: GateReason | undefined =
-    signals.yes_no < GATE_POLICY.minYesNo ? "not_yes_no"
+    signals.english < GATE_POLICY.minEnglish ? "not_english"
+    : signals.yes_no < GATE_POLICY.minYesNo ? "not_yes_no"
     : signals.injection > GATE_POLICY.maxInjection ? "injection"
     : signals.market > GATE_POLICY.maxMarket ? "market"
     : unidentifiedPerson ? "personal"
