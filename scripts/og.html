@@ -1,0 +1,39 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><style>
+  * { box-sizing: border-box; margin: 0; }
+  :root {
+    --paper: #e9ebe4; --ink: #171a17; --graphite: #6a7166;
+    --hairline: #c9cec2; --yes: #1f6f4a;
+    --mono: "Menlo", ui-monospace, monospace;
+    --sans: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  }
+  body {
+    width: 1200px; height: 630px; background: var(--paper); color: var(--ink);
+    font-family: var(--sans); display: flex; flex-direction: column;
+    justify-content: center; padding: 0 96px;
+  }
+  .wordmark { font-family: var(--mono); font-size: 132px; font-weight: 500; letter-spacing: -0.055em; line-height: 1; }
+  .expansion { font-family: var(--mono); font-size: 20px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--graphite); margin-top: 26px; }
+  .gauge { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 28px; margin-top: 76px; }
+  .pole { font-family: var(--mono); font-size: 20px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--graphite); }
+  .track { position: relative; height: 4px; }
+  .track::before { content: ""; position: absolute; inset: 0; top: 50%; height: 2px; background: var(--ink); }
+  .tick { position: absolute; top: 50%; left: calc(var(--at) * 100%); width: 2px; height: 14px; margin-top: -6px; background: var(--hairline); }
+  .tick.mid { height: 24px; margin-top: -11px; background: var(--graphite); }
+  .needle { position: absolute; top: 50%; left: 72%; width: 6px; height: 62px; margin: -31px 0 0 -3px; border-radius: 3px; background: var(--yes); }
+  .tagline { font-size: 30px; line-height: 1.45; color: var(--ink); margin-top: 68px; max-width: 900px; }
+  .tagline b { font-weight: 400; color: var(--graphite); }
+</style></head><body>
+  <div class="wordmark">lmjtfy</div>
+  <div class="expansion">let me Jev that for you</div>
+  <div class="gauge">
+    <span class="pole">no</span>
+    <div class="track">
+      <span class="tick" style="--at:0"></span><span class="tick" style="--at:.25"></span>
+      <span class="tick mid" style="--at:.5"></span><span class="tick" style="--at:.75"></span>
+      <span class="tick" style="--at:1"></span><span class="needle"></span>
+    </div>
+    <span class="pole">yes</span>
+  </div>
+  <p class="tagline">Ask a yes or no question. <b>Jev answers with a probability, not an argument.</b></p>
+</body></html>

@@ -135,6 +135,40 @@ npm run deploy
 `lmjtfy.dev` is canonical; `www` is bound only so the Worker can 301 it to the
 apex, preserving path and query.
 
+## Search, answer engines, and crawlers
+
+Search engines and link unfurlers are welcome; crawlers that harvest pages for
+model training or answer generation are not. That policy is enforced in three
+places, because `robots.txt` alone is only advice:
+
+1. **`public/robots.txt`** — the declared policy, for crawlers that read it.
+2. **`src/bots.ts`** — the Worker refuses the same agents with a 403, so the
+   policy binds anything that sends an honest user agent. `robots.txt` itself
+   stays readable to blocked agents, so the policy is discoverable.
+3. **Cloudflare AI Crawl Control** — zone-level enforcement for agents that lie
+   about who they are. Configured on the zone, not in this repo:
+   *Dashboard → lmjtfy.dev → Security → Settings → AI Crawl Control.*
+
+Matching is on lowercased substrings, and the list is written to avoid catching
+an allowed agent by accident: `applebot-extended` rather than `applebot`, so
+Apple's search crawler stays welcome while its training crawler does not.
+
+Note the deliberate cost: blocking `OAI-SearchBot`, `Perplexity-User` and
+`Claude-SearchBot` keeps the page out of AI answer engines as well as out of
+training sets. Those three are the AEO surface. Remove them from
+`BLOCKED_AGENTS` and from `robots.txt` if that trade stops being worth it.
+
+### What a crawler actually sees
+
+The readings are rendered client-side, so a crawler would otherwise get an
+empty page. `src/seo.ts` uses `HTMLRewriter` to bake the current readings into
+the HTML before it leaves the Worker, which also makes the `FAQPage` structured
+data honest — every question in the markup is really in the document.
+
+A `?q=` link additionally gets its own `<title>`, description, canonical and
+Open Graph tags built from that question's verdict, so each shared question is
+its own indexable page. `/sitemap.xml` is generated from D1 and lists them.
+
 ## Sharing a question
 
 `lmjtfy.dev/?q=Is+a+hot+dog+a+sandwich%3F` types the question into the input

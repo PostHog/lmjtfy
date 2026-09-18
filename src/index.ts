@@ -4,6 +4,8 @@ import { hashIp, normalizeQuestion, questionId, tidyDisplay } from "./normalize"
 import type { Notice } from "./ratelimit";
 import { checkAskRate, checkFeedRate, clientIp, limitNotice, utcDay } from "./ratelimit";
 import { RateLimitError, APIConnectionError } from "@typesafe-ai/sdk";
+import { blockedResponse, isBlockedAgent } from "./bots";
+import { decorateHtml, sitemapXml } from "./seo";
 import { EventStream } from "./sse";
 import type { Env, MatchKind, QuestionRow } from "./types";
 
@@ -60,6 +62,21 @@ export default {
       const canonical = new URL(url);
       canonical.hostname = url.hostname.slice(4);
       return Response.redirect(canonical.toString(), 301);
+    }
+
+    // robots.txt stays readable so a refused crawler can see the policy.
+    if (url.pathname !== "/robots.txt" && isBlockedAgent(request.headers.get("user-agent"))) {
+      return blockedResponse();
+    }
+
+    if (url.pathname === "/sitemap.xml") {
+      const rows = await db.feed(env.DB, { sort: "top", limit: 500 }).catch(() => []);
+      return new Response(sitemapXml(rows), {
+        headers: {
+          "content-type": "application/xml; charset=utf-8",
+          "cache-control": "public, max-age=1800",
+        },
+      });
     }
 
     if (url.pathname.startsWith("/api/")) {
@@ -340,19 +357,59 @@ function present(row: QuestionRow) {
 
 async function serveAsset(request: Request, env: Env, url: URL): Promise<Response> {
   const asset = await env.ASSETS.fetch(request);
-  const response =
+  let response =
     asset.status === 404 && !url.pathname.includes(".")
       ? await env.ASSETS.fetch(new Request(new URL("/", url), request))
       : asset;
+
+  if (response.headers.get("content-type")?.includes("text/html")) {
+    response = await decorate(request, env, url, response);
+  }
 
   const headers = new Headers(response.headers);
   headers.set("x-content-type-options", "nosniff");
   headers.set("referrer-policy", "strict-origin-when-cross-origin");
   headers.set(
     "content-security-policy",
-    "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+    [
+      "default-src 'self'",
+      "img-src 'self' data:",
+      // Positions on the gauge and the reading dots are inline custom
+      // properties; without this CSP collapses every one of them to zero.
+      "style-src 'self' 'unsafe-inline'",
+      "script-src 'self' https://static.cloudflareinsights.com",
+      "connect-src 'self' https://cloudflareinsights.com",
+      "frame-ancestors 'none'",
+      "base-uri 'none'",
+      "form-action 'none'",
+    ].join("; "),
   );
   return new Response(response.body, { status: response.status, headers });
+}
+
+/** Bakes the live readings, and any ?q= question, into the served HTML. */
+async function decorate(
+  request: Request,
+  env: Env,
+  url: URL,
+  response: Response,
+): Promise<Response> {
+  const rows = await db.feed(env.DB, { sort: "recent", limit: 30 }).catch(() => []);
+
+  const q = url.searchParams.get("q");
+  let focus: QuestionRow | undefined;
+  let focusQuery: string | undefined;
+
+  if (q) {
+    focusQuery = tidyDisplay(q).slice(0, MAX_LEN);
+    const normalized = normalizeQuestion(focusQuery);
+    const found =
+      (await db.findByNormalized(env.DB, normalized).catch(() => null)) ??
+      (await db.findByAlias(env.DB, normalized).catch(() => null));
+    focus = found ?? undefined;
+  }
+
+  return decorateHtml(response, { rows, focus, focusQuery });
 }
 
 function json(data: unknown, status = 200, extra: Record<string, string> = {}): Response {

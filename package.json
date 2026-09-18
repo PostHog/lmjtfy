@@ -10,7 +10,8 @@
     "db:migrate:local": "wrangler d1 migrations apply lmjtfy --local",
     "db:migrate": "wrangler d1 migrations apply lmjtfy --remote",
     "tail": "wrangler tail",
-    "build:logo": "node scripts/build-logo.mjs"
+    "build:logo": "node scripts/build-logo.mjs",
+    "build:og": "node scripts/build-og.mjs"
   },
   "license": "ISC",
   "type": "module",
@@ -20,6 +21,7 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260918.1",
     "@posthog/brand": "^0.12.2",
+    "playwright-core": "^1.63.0",
     "typescript": "^7.0.2",
     "vitest": "^5.0.1",
     "wrangler": "^4.135.0"

@@ -1,0 +1,86 @@
+# lmjtfy.dev
+#
+# Search engines and link unfurlers are welcome. Crawlers that harvest pages
+# for model training or answer generation are not.
+#
+# robots.txt is advisory, so the Worker also refuses the agents listed under
+# "blocked" below by user agent (src/bots.ts). Cloudflare AI Crawl Control is
+# the third layer, configured on the zone rather than in this repo.
+
+# --- Search engines: allowed -------------------------------------------------
+
+User-agent: Googlebot
+User-agent: Googlebot-Image
+User-agent: Bingbot
+User-agent: DuckDuckBot
+User-agent: Applebot
+User-agent: YandexBot
+User-agent: Baiduspider
+User-agent: Slurp
+User-agent: Qwantbot
+User-agent: Kagibot
+Allow: /
+Disallow: /api/
+
+# --- Link previews: allowed, or shared links lose their image ----------------
+
+User-agent: Twitterbot
+User-agent: facebookexternalhit
+User-agent: Facebot
+User-agent: LinkedInBot
+User-agent: Slackbot
+User-agent: Slackbot-LinkExpanding
+User-agent: Discordbot
+User-agent: TelegramBot
+User-agent: WhatsApp
+User-agent: Mastodon
+User-agent: redditbot
+User-agent: SkypeUriPreview
+Allow: /
+Disallow: /api/
+
+# --- Model training and answer engines: blocked ------------------------------
+
+User-agent: GPTBot
+User-agent: OAI-SearchBot
+User-agent: ChatGPT-User
+User-agent: ClaudeBot
+User-agent: Claude-User
+User-agent: Claude-SearchBot
+User-agent: Claude-Web
+User-agent: anthropic-ai
+User-agent: PerplexityBot
+User-agent: Perplexity-User
+User-agent: Google-Extended
+User-agent: Applebot-Extended
+User-agent: Meta-ExternalAgent
+User-agent: Meta-ExternalFetcher
+User-agent: FacebookBot
+User-agent: Amazonbot
+User-agent: Bytespider
+User-agent: CCBot
+User-agent: cohere-ai
+User-agent: cohere-training-data-crawler
+User-agent: Diffbot
+User-agent: omgili
+User-agent: omgilibot
+User-agent: ImagesiftBot
+User-agent: YouBot
+User-agent: AI2Bot
+User-agent: Timpibot
+User-agent: Webzio-Extended
+User-agent: PanguBot
+User-agent: Kangaroo Bot
+User-agent: DuckAssistBot
+User-agent: MistralAI-User
+User-agent: SemrushBot-OCOB
+Disallow: /
+
+# --- Everything else ---------------------------------------------------------
+# Unknown crawlers get the page but not the API.
+
+User-agent: *
+Allow: /
+Disallow: /api/
+
+Sitemap: https://lmjtfy.dev/sitemap.xml

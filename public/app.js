@@ -41,7 +41,10 @@ let sort = "recent";
 let inFlight = false;
 let pollTimer = null;
 let source = null;
-let loaded = false;
+// The Worker bakes the current readings into the HTML for crawlers and for
+// first paint, so treat a pre-populated list as already loaded rather than
+// flashing skeletons over content that is right there.
+let loaded = ledgerList.children.length > 0;
 
 /* ------------------------------------------------------------------ view */
 
@@ -397,7 +400,8 @@ async function askFromUrl() {
 }
 
 requestAnimationFrame(() => gauge.style.setProperty("--draw", "1"));
-showSkeleton();
+if (!loaded) showSkeleton();
+ledgerEmpty.hidden = loaded;
 loadLedger();
 connectLive();
 schedulePoll();
