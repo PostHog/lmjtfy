@@ -18,7 +18,7 @@ const GATE_NOTICES: Record<string, Notice> = {
   not_yes_no: {
     kind: "refusal",
     title: "Not a yes or no question",
-    body: "Jev only answers questions where yes or no is the answer. Rephrase it and try again.",
+    body: "Jev only answers questions where yes or no is the answer. Asking it to pick between two options does not count, so try 'is X better than Y' rather than 'X or Y'.",
   },
   not_sfw: {
     kind: "refusal",
@@ -35,10 +35,15 @@ const GATE_NOTICES: Record<string, Notice> = {
     title: "Nice try",
     body: "Ask Jev a question rather than giving it instructions.",
   },
-  private_individual: {
+  personal: {
     kind: "refusal",
-    title: "Not about people",
-    body: "Jev does not hand down verdicts on people, famous or otherwise, or on their names. Ask about something instead of someone.",
+    title: "Who exactly?",
+    body: "Jev will weigh in on a public figure named plainly, like Trump or Taylor Swift. A first name on its own could belong to anyone, so that is a no.",
+  },
+  market: {
+    kind: "refusal",
+    title: "Not investment advice",
+    body: "Jev does not put a yes or no on what to buy, sell or hold. Ask it something that cannot move a share price.",
   },
   harmful: {
     kind: "refusal",

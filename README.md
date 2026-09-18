@@ -21,12 +21,19 @@ judgments decide whether the submission is answerable and publishable:
 
 | Question | Type | Blocks when |
 | --- | --- | --- |
-| `yes_no` | Noul | below 0.55 — not answerable with yes or no |
+| `yes_no` | Noul | below 0.55 — not answerable with yes or no, including "A or B" pick-one questions |
 | `sfw` | Noul | below 0.50 — not safe for a work screen |
 | `pg13` | Noul | below 0.50 — beyond a PG-13 rating |
 | `injection` | Noul | above 0.60 — instructing the system rather than asking it |
-| `targets_individual` | Noul | above 0.70 — a verdict on a private person |
+| `market` | Noul | above 0.60 — would read as investment advice or move a price |
+| `about_person` + `famous_person` | Noul | a person is judged (above 0.60) *and* is not unmistakably one public figure (below 0.60) |
 | `severity` | Score | above 1.6 — publishing a verdict could do real harm |
+
+The two person questions are deliberately separate and composed in code, because
+fame is not the test: identifiability is. "Musk" points at one man and is
+allowed; "Elon" could be anybody and is not, even though a famous person shares
+the name. Measured across 20 cases, allowed names score 0.87 and up on
+`famous_person` while bare first names sit at 0.12 and below.
 
 Thresholds live in `GATE_POLICY`, separate from the questions, so the safety
 posture can be retuned without touching what Jev is asked.

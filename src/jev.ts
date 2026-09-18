@@ -38,8 +38,8 @@ const gateQuestions = {
   yes_no: noul(
     "The text in `submission` was typed by a visitor into a website that answers yes/no questions. Is `submission` something that can be sensibly answered with just yes or no?",
     {
-      true: "A yes/no question, however casually phrased — 'is', 'are', 'does', 'should', 'can', 'will', 'would', 'is it true that'. Also true for a bare claim clearly offered up for a verdict, such as 'pineapple belongs on pizza'.",
-      false: "An open question that wants an explanation, a list, a number, a name, or a date — typically 'why', 'how', 'what', 'who', 'when', 'where', 'which'. Also false for a command, a greeting, or text that is not a question at all.",
+      true: "A yes/no question, however casually phrased: 'is', 'are', 'does', 'should', 'can', 'will', 'would', 'is it true that'. Also true for a bare claim offered up for a verdict, such as 'pineapple belongs on pizza'. A comparison stated as 'is X better than Y' is TRUE, because yes or no answers it: 'is renting better than buying' and 'is React better than Angular' are both true. A trailing 'or not' is only emphasis and stays true.",
+      false: "An open question wanting an explanation, a list, a number, a name, or a date, typically 'why', 'how', 'what', 'who', 'when', 'where', 'which'. Also false when the question puts two or more options side by side and asks which one to pick, so the reply has to name an option rather than say yes or no: 'is it better to give or to take', 'should I learn Python or JavaScript', 'tea or coffee'. The test is the shape of the reply: if answering means naming one of the options, it is false; if answering means saying yes or no, it is true. Also false for a command, a greeting, or text that is not a question at all.",
     },
   ),
   sfw: noul(
@@ -63,11 +63,25 @@ const gateQuestions = {
       false: "Just a question, however odd, provocative, or opinionated. A question about AI systems in general is not an attempt to instruct this one.",
     },
   ),
-  targets_individual: noul(
-    "Does `submission` ask for a judgment about a particular real person, or about somebody's personal name?",
+  about_person: noul(
+    "Does `submission` ask for a judgment about a person, or about somebody's personal name?",
     {
-      true: "Names or unmistakably identifies a real person, famous or not, living or dead, and asks for any judgment that touches them: their character, looks, talent, competence, worth, or choices. Also true when the subject is a personal first name or surname in its own right, such as 'is Rafael a good name' or 'is Chloe a pretty name', because a real person wears the answer either way.",
-      false: "Asks about a group, a company, a product, a programming language, a place, a fictional character, an idea, an object, a work referred to by its own title, or nobody in particular. A proper noun that names a language, a city, a brand, a band or a product is not a personal name.",
+      true: "Evaluates a human being: how good, attractive, clever, likeable, competent or worthwhile they are, or what they did. Also true when the subject is a personal first name or surname considered as a name, such as 'is Rafael a good name'.",
+      false: "Asks about a group, a company, a product, a programming language, a place, a fictional character, an idea, an object, a work referred to by its own title, or nobody in particular.",
+    },
+  ),
+  famous_person: noul(
+    "Is the person in `submission` named in a way that pins down exactly one widely known public figure?",
+    {
+      true: "The naming identifies one specific famous person and could not reasonably mean anybody else. A full name such as 'Taylor Swift' or 'Rafael Nadal', or a surname or single name that on its own points to one famous person, such as 'Musk', 'Trump', 'Beyonce' or 'Shakespeare'.",
+      false: "The naming does not pin down one famous person. A bare first name such as 'Elon', 'Taylor', 'Chloe' or 'Sarah' could be any number of people, so it is false even when a famous person happens to share that name. Also false for a private individual, for someone described rather than named, and when the question is not about a person at all.",
+    },
+  ),
+  market: noul(
+    "Does `submission` ask for a judgment that would read as investment advice or could move the price of a traded asset?",
+    {
+      true: "Asks whether to buy, sell or hold a specific company, share, cryptocurrency, fund or commodity; whether a named asset is a good investment, overvalued or undervalued; or predicts where a price, market, or economy is heading.",
+      false: "Anything not bearing on the value of a tradeable asset. General money habits and personal-finance principles are false, such as 'is renting better than buying a house' or 'should you tip'. A question about a company's products, culture, leadership or ethics is also false, as long as it is not about that company as an investment.",
     },
   ),
   severity: score(
@@ -91,7 +105,10 @@ const GATE_POLICY = {
   minSfw: 0.5,
   minPg13: 0.5,
   maxInjection: 0.6,
-  maxTargetsIndividual: 0.6,
+  maxMarket: 0.6,
+  /** A question about a person is refused unless that person is unmistakable. */
+  minAboutPerson: 0.6,
+  minFamousPerson: 0.6,
   maxSeverity: 1.6,
 } as const;
 
@@ -100,7 +117,8 @@ export type GateReason =
   | "not_sfw"
   | "not_pg13"
   | "injection"
-  | "private_individual"
+  | "market"
+  | "personal"
   | "harmful";
 
 export interface GateResult {
@@ -111,7 +129,9 @@ export interface GateResult {
     sfw: number;
     pg13: number;
     injection: number;
-    targets_individual: number;
+    about_person: number;
+    famous_person: number;
+    market: number;
     severity: number;
   };
 }
@@ -128,9 +148,16 @@ export async function runGate(client: TypeSafeClient, submission: string): Promi
     sfw: answers.sfw.noul,
     pg13: answers.pg13.noul,
     injection: answers.injection.noul,
-    targets_individual: answers.targets_individual.noul,
+    about_person: answers.about_person.noul,
+    famous_person: answers.famous_person.noul,
+    market: answers.market.noul,
     severity: answers.severity.score,
   };
+
+  // Naming a person is only a problem when nobody can tell which person.
+  const unidentifiedPerson =
+    signals.about_person > GATE_POLICY.minAboutPerson &&
+    signals.famous_person < GATE_POLICY.minFamousPerson;
 
   // Ordered so the visitor gets the most useful explanation first: telling
   // someone their question is not a yes/no question is more actionable than
@@ -138,8 +165,9 @@ export async function runGate(client: TypeSafeClient, submission: string): Promi
   const reason: GateReason | undefined =
     signals.yes_no < GATE_POLICY.minYesNo ? "not_yes_no"
     : signals.injection > GATE_POLICY.maxInjection ? "injection"
+    : signals.market > GATE_POLICY.maxMarket ? "market"
+    : unidentifiedPerson ? "personal"
     : signals.severity > GATE_POLICY.maxSeverity ? "harmful"
-    : signals.targets_individual > GATE_POLICY.maxTargetsIndividual ? "private_individual"
     : signals.sfw < GATE_POLICY.minSfw ? "not_sfw"
     : signals.pg13 < GATE_POLICY.minPg13 ? "not_pg13"
     : undefined;
