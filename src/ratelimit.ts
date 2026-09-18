@@ -28,17 +28,49 @@ export async function checkFeedRate(env: Env, ipHash: string): Promise<LimitOutc
   return { ok: true };
 }
 
-export function limitMessage(outcome: LimitOutcome): string {
+/** A notice the page can render without deciding how to word it. */
+export interface Notice {
+  kind: "refusal" | "limit" | "error";
+  title: string;
+  body: string;
+}
+
+export function limitNotice(outcome: LimitOutcome, quota?: number): Notice {
   switch (outcome.scope) {
     case "burst":
-      return "Jev needs a breath. Try again in a few seconds.";
+      return {
+        kind: "limit",
+        title: "One at a time",
+        body: "Jev is still catching up on your last question. Try again in a few seconds.",
+      };
     case "sustained":
-      return "That is a lot of questions in one minute. Give it a minute.";
+      return {
+        kind: "limit",
+        title: "Slow down",
+        body: "That is a lot of questions in one minute. Give it a minute and carry on.",
+      };
     case "daily":
-      return "You have used up today's questions. Jev will be here tomorrow.";
+      return {
+        kind: "limit",
+        title: "That is today's lot",
+        body: `You have used all ${quota ?? "of today's"} questions for today. The counter resets at midnight UTC, in ${untilUtcMidnight()}. Everything already asked is still in the readings.`,
+      };
     default:
-      return "Slow down a moment.";
+      return { kind: "limit", title: "Hold on", body: "Give it a moment and try again." };
   }
+}
+
+/** Human-readable time until the daily quota rolls over. */
+export function untilUtcMidnight(at = Date.now()): string {
+  const next = Date.UTC(
+    new Date(at).getUTCFullYear(),
+    new Date(at).getUTCMonth(),
+    new Date(at).getUTCDate() + 1,
+  );
+  const minutes = Math.max(1, Math.round((next - at) / 60_000));
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+  const hours = Math.round(minutes / 60);
+  return `${hours} hour${hours === 1 ? "" : "s"}`;
 }
 
 export function clientIp(request: Request): string {

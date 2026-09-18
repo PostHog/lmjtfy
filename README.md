@@ -59,8 +59,27 @@ the only one.
 
 - **Cloudflare Workers** — API and static asset serving (`src/index.ts`)
 - **D1** — questions, aliases, FTS5 index, per-IP quota, rejection counters
+- **Durable Object** — one `ReadingsHub` fans new readings out to every open page
 - **TypeSafe JS SDK** — `@typesafe-ai/sdk`, which supports the Workers runtime
-- No frontend framework. One HTML page, one stylesheet, one module.
+- No frontend framework and no build step. One HTML page, one stylesheet, one
+  ES module, served verbatim — 24.5 KB raw, 7.6 KB gzipped.
+
+The one generated asset is the PostHog logo in the footer: `@posthog/brand`
+ships React components, so `npm run build:logo` inlines the raw geometry into
+`public/index.html` instead. It is inlined rather than an `<img>` because the
+mono variant paints with `currentColor`, which does not inherit across an
+`<img>` boundary.
+
+### Live readings
+
+The ledger is pushed, not polled. Each answer is published to a single
+`ReadingsHub` Durable Object, which broadcasts it over SSE to everyone with the
+page open, so ask counts tick up on other people's screens as they happen.
+
+That single object is a deliberate hotspot. Subscribers are capped at 4,000 and
+the hub returns 503 past that; the page also keeps a slow poll running and falls
+back to it whenever the stream drops or is refused. A spike degrades to the old
+behaviour rather than taking the column down.
 
 ### Rate limits
 
@@ -69,10 +88,21 @@ the only one.
 | 4 asks / 10s | per IP | Workers rate limiting binding |
 | 20 asks / 60s | per IP | Workers rate limiting binding |
 | 30 feed reads / 10s | per IP | Workers rate limiting binding |
-| 60 Jev-reaching asks / UTC day | per IP | D1 (`ip_quota`) |
+| 500 Jev-reaching asks / UTC day | per IP | D1 (`ip_quota`) |
 
 The daily quota is only charged when an ask actually reaches Jev. Reading an
 answer someone else already paid for is free.
+
+The daily cap is deliberately generous, because it was never the thing holding
+costs down. A new question costs about 1,900 input tokens across both requests
+— roughly $0.00008, so a million of them is under $80. The real ceiling is
+TypeSafe's account limit of 1,200 requests per minute, which a traffic spike
+reaches long before any per-IP cap matters. When it does, the SDK's `RateLimitError`
+surfaces as a "Jev is oversubscribed" notice rather than a generic failure.
+
+The page distinguishes three reasons an answer might not arrive, because they
+are not the same event and should not look alike: a **refusal** (Jev declined
+the question), a **limit** (an allowance ran out), and an **error** (our fault).
 
 IPs are never stored in the clear — only a salted SHA-256 hash, in rows pruned
 after three days. Blocked submissions are counted by reason; their text is not
@@ -102,6 +132,15 @@ npm run deploy
 ```
 
 `wrangler.jsonc` binds `lmjtfy.dev` and `www.lmjtfy.dev` as custom domains.
+`lmjtfy.dev` is canonical; `www` is bound only so the Worker can 301 it to the
+apex, preserving path and query.
+
+## Sharing a question
+
+`lmjtfy.dev/?q=Is+a+hot+dog+a+sandwich%3F` types the question into the input
+and asks it, so a shared link replays what the sender saw. Answering a question
+rewrites the URL to its own `?q=` form, which makes every reading shareable.
+`prefers-reduced-motion` skips the typing and fills the field directly.
 
 ## Layout
 

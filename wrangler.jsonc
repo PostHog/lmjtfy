@@ -16,8 +16,19 @@
     "directory": "./public",
     "binding": "ASSETS",
     // Unmatched paths fall through to the Worker so /api/* is never swallowed.
-    "not_found_handling": "none"
+    "not_found_handling": "none",
+    // Assets are served directly by default, skipping the Worker entirely.
+    // The Worker has to see every request so it can apply security headers
+    // and redirect www to the apex, both of which are silently skipped
+    // otherwise.
+    "run_worker_first": true
   },
+
+  "durable_objects": {
+    "bindings": [{ "name": "HUB", "class_name": "ReadingsHub" }]
+  },
+
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ReadingsHub"] }],
 
   "d1_databases": [
     {
@@ -54,7 +65,9 @@
 
   "vars": {
     // Asks per IP per UTC day that actually reach Jev. Cached answers are free.
-    "DAILY_ASK_QUOTA": "60"
+    // Generous on purpose: a real person will not ask 500 yes/no questions in
+    // a day, and the 4/10s and 20/60s burst limits are what stop a script.
+    "DAILY_ASK_QUOTA": "500"
   },
 
   "observability": { "enabled": true }

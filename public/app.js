@@ -18,10 +18,13 @@ const verdictSettled = document.getElementById("verdict-settled");
 const verdictGrouped = document.getElementById("verdict-grouped");
 const status = document.getElementById("status");
 const statusText = document.getElementById("status-text");
-const refusal = document.getElementById("refusal");
+const notice = document.getElementById("notice");
+const noticeTitle = document.getElementById("notice-title");
+const noticeBody = document.getElementById("notice-body");
 
 const ledgerList = document.getElementById("ledger-list");
 const ledgerEmpty = document.getElementById("ledger-empty");
+const ledgerLive = document.getElementById("ledger-live");
 const sortButtons = [...document.querySelectorAll(".ledger__sort-btn")];
 
 const STAGE_COPY = {
@@ -32,9 +35,13 @@ const STAGE_COPY = {
 
 const SETTLED_COPY = ["taste", "contested", "broadly agreed", "settled"];
 
+const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
 let sort = "recent";
 let inFlight = false;
 let pollTimer = null;
+let source = null;
+let loaded = false;
 
 /* ------------------------------------------------------------------ view */
 
@@ -56,14 +63,14 @@ function hideStatus() {
 function clearReadout() {
   verdict.hidden = true;
   verdictGrouped.hidden = true;
-  refusal.hidden = true;
-  readout.classList.remove("is-live", "is-refused");
+  notice.hidden = true;
+  readout.classList.remove("is-live", "is-noticed");
 }
 
 function renderVerdict(question, detail) {
   const colour = readingColor(question.noul);
   readout.classList.add("is-live");
-  readout.classList.remove("is-refused");
+  readout.classList.remove("is-noticed");
   readout.style.setProperty("--reading", colour);
   needle.style.setProperty("--p", question.noul);
 
@@ -87,15 +94,19 @@ function renderVerdict(question, detail) {
   }
 
   verdict.hidden = false;
-  refusal.hidden = true;
+  notice.hidden = true;
 }
 
-function showRefusal(message) {
-  refusal.textContent = message;
-  refusal.hidden = false;
+/** kind is "refusal", "limit" or "error" — a declined question, a spent
+    allowance and a broken request should not look like the same event. */
+function showNotice({ kind = "error", title = "Something broke", body = "" }) {
+  notice.className = `notice notice--${kind}`;
+  noticeTitle.textContent = title;
+  noticeBody.textContent = body;
+  notice.hidden = false;
   verdict.hidden = true;
   readout.classList.remove("is-live");
-  readout.classList.add("is-refused");
+  readout.classList.add("is-noticed");
 }
 
 function setBusy(busy) {
@@ -143,9 +154,26 @@ function readingNode(question, fresh) {
   return li;
 }
 
+function ghostNode() {
+  const li = document.createElement("li");
+  li.className = "reading reading--ghost";
+  const long = document.createElement("div");
+  long.className = "reading__ghost-line";
+  const short = document.createElement("div");
+  short.className = "reading__ghost-line reading__ghost-line--short";
+  li.append(long, short);
+  return li;
+}
+
+function showSkeleton() {
+  ledgerList.replaceChildren(...Array.from({ length: 6 }, ghostNode));
+  ledgerEmpty.hidden = true;
+}
+
 function renderLedger(questions) {
   ledgerList.replaceChildren(...questions.map((q) => readingNode(q, false)));
   ledgerEmpty.hidden = questions.length > 0;
+  loaded = true;
 }
 
 function liftToTop(question) {
@@ -153,17 +181,64 @@ function liftToTop(question) {
   if (existing) existing.remove();
   ledgerList.prepend(readingNode(question, true));
   ledgerEmpty.hidden = true;
+  trimLedger();
+}
+
+/** Someone else's reading. Update in place under "most asked" so their
+    scroll position survives; move to the top under "recent", where the
+    order is the information. */
+function applyRemote(question) {
+  if (!loaded) return;
+  const existing = ledgerList.querySelector(`[data-id="${question.id}"]`);
+  if (sort === "top" && existing) {
+    existing.replaceWith(readingNode(question, false));
+    return;
+  }
+  if (sort === "top") return;
+  liftToTop(question);
+}
+
+function trimLedger() {
+  while (ledgerList.children.length > 60) ledgerList.lastElementChild.remove();
 }
 
 async function loadLedger() {
   try {
+    if (!loaded) showSkeleton();
     const res = await fetch(`/api/feed?sort=${sort}&limit=40`);
     if (!res.ok) return;
     const data = await res.json();
     renderLedger(data.questions ?? []);
   } catch {
     /* the ledger is ambient; a failed poll is not worth reporting */
+    if (!loaded) {
+      ledgerList.replaceChildren();
+      ledgerEmpty.hidden = false;
+    }
   }
+}
+
+/* Live readings. A Durable Object fans every new answer out to everyone with
+   the page open; polling stays on as a slow safety net so a dropped stream or
+   a hub at capacity degrades instead of freezing the column. */
+function connectLive() {
+  if (source) source.close();
+  source = new EventSource("/api/stream");
+
+  source.addEventListener("open", () => ledgerLive.classList.add("is-live"));
+
+  source.addEventListener("reading", (event) => {
+    try {
+      applyRemote(JSON.parse(event.data));
+    } catch {
+      /* ignore a malformed frame */
+    }
+  });
+
+  source.addEventListener("error", () => {
+    ledgerLive.classList.remove("is-live");
+    // EventSource retries on its own; the poll covers the gap meanwhile.
+  });
 }
 
 function schedulePoll() {
@@ -171,7 +246,7 @@ function schedulePoll() {
   pollTimer = setTimeout(async () => {
     if (!inFlight && document.visibilityState === "visible") await loadLedger();
     schedulePoll();
-  }, 8000);
+  }, source && ledgerLive.classList.contains("is-live") ? 60000 : 8000);
 }
 
 /* ------------------------------------------------------------------- ask */
@@ -223,7 +298,7 @@ async function ask(question) {
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       hideStatus();
-      showRefusal(body.error ?? "Jev is unavailable. Try again shortly.");
+      showNotice(body);
       return;
     }
 
@@ -244,22 +319,28 @@ async function ask(question) {
         renderVerdict(data.question, detail);
         liftToTop(data.question);
         input.value = "";
-      } else if (event === "blocked") {
+        history.replaceState(null, "", `?q=${encodeURIComponent(data.question.text)}`);
+      } else if (event === "notice") {
         hideStatus();
-        showRefusal(data.message);
-      } else if (event === "error") {
-        hideStatus();
-        showRefusal(data.message);
+        showNotice(data);
       }
     }
 
-    if (!answered && refusal.hidden && verdict.hidden) {
+    if (!answered && notice.hidden && verdict.hidden) {
       hideStatus();
-      showRefusal("Jev stopped mid-thought. Try again.");
+      showNotice({
+        kind: "error",
+        title: "Jev stopped mid-thought",
+        body: "The connection dropped before an answer arrived. Try again.",
+      });
     }
   } catch {
     hideStatus();
-    showRefusal("Lost the connection to Jev. Try again.");
+    showNotice({
+      kind: "error",
+      title: "Lost the connection",
+      body: "Check your network and ask again.",
+    });
   } finally {
     setBusy(false);
     hideStatus();
@@ -288,7 +369,39 @@ document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible" && !inFlight) loadLedger();
 });
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function typeInto(text) {
+  if (reducedMotion) {
+    input.value = text;
+    return;
+  }
+  input.value = "";
+  for (const character of text) {
+    input.value += character;
+    await sleep(character === " " ? 46 : 26 + Math.random() * 26);
+  }
+}
+
+async function askFromUrl() {
+  const q = new URLSearchParams(location.search).get("q");
+  if (!q) return false;
+  const question = q.replace(/\s+/g, " ").trim().slice(0, 280);
+  if (question.length < 3) return false;
+
+  await sleep(reducedMotion ? 0 : 450);
+  await typeInto(question);
+  await sleep(reducedMotion ? 0 : 280);
+  await ask(question);
+  return true;
+}
+
 requestAnimationFrame(() => gauge.style.setProperty("--draw", "1"));
+showSkeleton();
 loadLedger();
+connectLive();
 schedulePoll();
-input.focus();
+
+askFromUrl().then((asked) => {
+  if (!asked) input.focus();
+});

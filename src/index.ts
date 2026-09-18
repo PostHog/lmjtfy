@@ -1,38 +1,102 @@
 import * as db from "./db";
 import { findSameQuestion, jevClient, runGate, runVerdict, verdictLabel } from "./jev";
 import { hashIp, normalizeQuestion, questionId, tidyDisplay } from "./normalize";
-import { checkAskRate, checkFeedRate, clientIp, limitMessage, utcDay } from "./ratelimit";
+import type { Notice } from "./ratelimit";
+import { checkAskRate, checkFeedRate, clientIp, limitNotice, utcDay } from "./ratelimit";
+import { RateLimitError, APIConnectionError } from "@typesafe-ai/sdk";
 import { EventStream } from "./sse";
 import type { Env, MatchKind, QuestionRow } from "./types";
+
+export { ReadingsHub } from "./hub";
 
 const MIN_LEN = 3;
 const MAX_LEN = 280;
 
-const GATE_MESSAGES: Record<string, string> = {
-  not_yes_no: "Jev only does yes and no. Rephrase it so yes or no is an answer.",
-  not_sfw: "Jev keeps it work-safe. Ask something else.",
-  not_pg13: "Jev keeps it PG-13. Ask something else.",
-  injection: "Nice try. Ask Jev a question instead of giving it orders.",
-  private_individual: "Jev does not hand down verdicts on private individuals.",
-  harmful: "Jev is not going to put a yes or no on that one.",
+const GATE_NOTICES: Record<string, Notice> = {
+  not_yes_no: {
+    kind: "refusal",
+    title: "Not a yes or no question",
+    body: "Jev only answers questions where yes or no is the answer. Rephrase it and try again.",
+  },
+  not_sfw: {
+    kind: "refusal",
+    title: "Not work-safe",
+    body: "Jev keeps this page safe to have open at work. Ask something else.",
+  },
+  not_pg13: {
+    kind: "refusal",
+    title: "Past PG-13",
+    body: "Jev keeps this page PG-13. Ask something else.",
+  },
+  injection: {
+    kind: "refusal",
+    title: "Nice try",
+    body: "Ask Jev a question rather than giving it instructions.",
+  },
+  private_individual: {
+    kind: "refusal",
+    title: "Not about a private person",
+    body: "Jev does not hand down verdicts on people who did not ask for one.",
+  },
+  harmful: {
+    kind: "refusal",
+    title: "Jev passes on this one",
+    body: "A yes or no here could do real damage, so Jev is not going to give one.",
+  },
+};
+
+const UNKNOWN_REFUSAL: Notice = {
+  kind: "refusal",
+  title: "Jev passes on this one",
+  body: "Jev will not put a yes or no on that question.",
 };
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
+    // lmjtfy.dev is the canonical host; www only exists to point at it.
+    if (url.hostname.startsWith("www.")) {
+      const canonical = new URL(url);
+      canonical.hostname = url.hostname.slice(4);
+      return Response.redirect(canonical.toString(), 301);
+    }
+
     if (url.pathname.startsWith("/api/")) {
       try {
         return await handleApi(request, env, ctx, url);
       } catch (err) {
         console.error("api error", err);
-        return json({ error: "Something went wrong on our side." }, 500);
+        return json(
+          {
+            kind: "error",
+            title: "Something broke",
+            body: "That is on us, not on your question. Try again in a moment.",
+          } satisfies Notice,
+          500,
+        );
       }
     }
 
     return serveAsset(request, env, url);
   },
 } satisfies ExportedHandler<Env>;
+
+function hub(env: Env): DurableObjectStub {
+  return env.HUB.get(env.HUB.idFromName("global"));
+}
+
+/** Pushes a reading to everyone with the page open. Never blocks the answer. */
+async function publish(env: Env, reading: unknown): Promise<void> {
+  try {
+    await hub(env).fetch("https://hub/publish", {
+      method: "POST",
+      body: JSON.stringify(reading),
+    });
+  } catch (err) {
+    console.error("publish failed", err);
+  }
+}
 
 async function handleApi(
   request: Request,
@@ -46,9 +110,13 @@ async function handleApi(
     return handleAsk(request, env, ctx, ipHash);
   }
 
+  if (url.pathname === "/api/stream" && request.method === "GET") {
+    return hub(env).fetch("https://hub/subscribe");
+  }
+
   if (url.pathname === "/api/feed" && request.method === "GET") {
     const gate = await checkFeedRate(env, ipHash);
-    if (!gate.ok) return json({ error: limitMessage(gate) }, 429);
+    if (!gate.ok) return json(limitNotice(gate), 429);
 
     const sort = url.searchParams.get("sort") === "top" ? "top" : "recent";
     const topic = url.searchParams.get("topic") ?? undefined;
@@ -69,7 +137,7 @@ async function handleApi(
     return json(await db.stats(env.DB), 200, { "cache-control": "public, max-age=30" });
   }
 
-  return json({ error: "Not found." }, 404);
+  return json({ kind: "error", title: "Not found", body: "No such endpoint." } satisfies Notice, 404);
 }
 
 async function handleAsk(
@@ -80,27 +148,25 @@ async function handleAsk(
 ): Promise<Response> {
   const rate = await checkAskRate(env, ipHash);
   if (!rate.ok) {
-    return json({ error: limitMessage(rate) }, 429, {
-      "retry-after": String(rate.retryAfter ?? 10),
-    });
+    return json(limitNotice(rate), 429, { "retry-after": String(rate.retryAfter ?? 10) });
   }
 
   let body: { question?: unknown };
   try {
     body = (await request.json()) as { question?: unknown };
   } catch {
-    return json({ error: "Send JSON with a question." }, 400);
+    return json({ kind: "error", title: "Malformed request", body: "Send JSON with a question field." } satisfies Notice, 400);
   }
 
   const raw = typeof body.question === "string" ? tidyDisplay(body.question) : "";
-  if (raw.length < MIN_LEN) return json({ error: "That is a bit short for a question." }, 400);
+  if (raw.length < MIN_LEN) return json({ kind: "refusal", title: "Too short", body: "That is not quite a question yet." } satisfies Notice, 400);
   if (raw.length > MAX_LEN) {
-    return json({ error: `Keep it under ${MAX_LEN} characters.` }, 400);
+    return json({ kind: "refusal", title: "Too long", body: `Keep it under ${MAX_LEN} characters. Jev answers questions, not essays.` } satisfies Notice, 400);
   }
 
   const normalized = normalizeQuestion(raw);
   if (normalized.length < MIN_LEN) {
-    return json({ error: "Jev needs actual words to work with." }, 400);
+    return json({ kind: "refusal", title: "No words in there", body: "Jev needs actual words to work with." } satisfies Notice, 400);
   }
 
   const stream = new EventStream();
@@ -129,10 +195,12 @@ async function runAsk({ env, ctx, stream, raw, normalized, ipHash }: AskContext)
 
     if (exact) {
       await db.recordRepeatAsk(env.DB, exact.id, now);
+      const reading = present({ ...exact, ask_count: exact.ask_count + 1, last_asked_at: now });
       stream.send("answer", {
-        question: present({ ...exact, ask_count: exact.ask_count + 1, last_asked_at: now }),
+        question: reading,
         match: (exact.normalized === normalized ? "exact" : "alias") satisfies MatchKind,
       });
+      ctx.waitUntil(publish(env, reading));
       stream.close();
       return;
     }
@@ -145,10 +213,7 @@ async function runAsk({ env, ctx, stream, raw, normalized, ipHash }: AskContext)
       clampInt(env.DAILY_ASK_QUOTA, 60, 1, 10_000),
     );
     if (!quota.allowed) {
-      stream.send("blocked", {
-        reason: "rate_limited",
-        message: limitMessage({ ok: false, scope: "daily" }),
-      });
+      stream.send("notice", limitNotice({ ok: false, scope: "daily" }, quota.quota));
       stream.close();
       return;
     }
@@ -168,10 +233,7 @@ async function runAsk({ env, ctx, stream, raw, normalized, ipHash }: AskContext)
 
     if (!gate.ok) {
       ctx.waitUntil(db.recordRejection(env.DB, day, gate.reason ?? "unknown"));
-      stream.send("blocked", {
-        reason: gate.reason,
-        message: GATE_MESSAGES[gate.reason ?? ""] ?? "Jev will not answer that one.",
-      });
+      stream.send("notice", GATE_NOTICES[gate.reason ?? ""] ?? UNKNOWN_REFUSAL);
       stream.close();
       return;
     }
@@ -192,16 +254,18 @@ async function runAsk({ env, ctx, stream, raw, normalized, ipHash }: AskContext)
             at: now,
           });
           await db.recordRepeatAsk(env.DB, existing.id, now);
+          const reading = present({
+            ...existing,
+            ask_count: existing.ask_count + 1,
+            last_asked_at: now,
+          });
           stream.send("answer", {
-            question: present({
-              ...existing,
-              ask_count: existing.ask_count + 1,
-              last_asked_at: now,
-            }),
+            question: reading,
             match: "semantic" satisfies MatchKind,
             askedAs: raw,
             similarity: same.similarity,
           });
+          ctx.waitUntil(publish(env, reading));
           stream.close();
           return;
         }
@@ -227,12 +291,36 @@ async function runAsk({ env, ctx, stream, raw, normalized, ipHash }: AskContext)
 
     await db.insertQuestion(env.DB, row);
     stream.send("answer", { question: present(row), match: "new" satisfies MatchKind });
+    ctx.waitUntil(publish(env, present(row)));
   } catch (err) {
     console.error("ask failed", err);
-    stream.send("error", { message: "Jev could not be reached. Try again in a moment." });
+    stream.send("notice", upstreamNotice(err));
   } finally {
     stream.close();
   }
+}
+
+/** Tells the visitor whether Jev is oversubscribed or genuinely broken. */
+function upstreamNotice(err: unknown): Notice {
+  if (err instanceof RateLimitError) {
+    return {
+      kind: "limit",
+      title: "Jev is oversubscribed",
+      body: "Too many people are asking at once. Give it a few seconds and ask again.",
+    };
+  }
+  if (err instanceof APIConnectionError) {
+    return {
+      kind: "error",
+      title: "Could not reach Jev",
+      body: "The request timed out on the way. Try again in a moment.",
+    };
+  }
+  return {
+    kind: "error",
+    title: "Something broke",
+    body: "That is on us, not on your question. Try again in a moment.",
+  };
 }
 
 /** Shape sent to the browser. Normalization keys stay server-side. */

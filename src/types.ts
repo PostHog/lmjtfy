@@ -5,6 +5,7 @@ export interface RateLimiter {
 export interface Env {
   ASSETS: Fetcher;
   DB: D1Database;
+  HUB: DurableObjectNamespace;
   TYPESAFE_API_KEY: string;
   IP_SALT: string;
   DAILY_ASK_QUOTA?: string;

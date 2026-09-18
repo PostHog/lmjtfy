@@ -14,6 +14,11 @@ import type { Env } from "./types";
  *     probability nobody can interpret.
  */
 
+/** Jev bills input tokens only, so this is what an ask actually costs. */
+function logUsage(stage: string, usage: { input_tokens: number; output_tokens: number }): void {
+  console.log(`jev_usage stage=${stage} input_tokens=${usage.input_tokens}`);
+}
+
 export function jevClient(env: Env): TypeSafeClient {
   return new TypeSafeClient({
     apiKey: env.TYPESAFE_API_KEY,
@@ -112,10 +117,11 @@ export interface GateResult {
 }
 
 export async function runGate(client: TypeSafeClient, submission: string): Promise<GateResult> {
-  const { answers } = await client.systemOne({
+  const { answers, usage } = await client.systemOne({
     state: { submission },
     questions: gateQuestions,
   });
+  logUsage("gate", usage);
 
   const signals = {
     yes_no: answers.yes_no.noul,
@@ -184,10 +190,11 @@ export async function findSameQuestion(
     );
   });
 
-  const { answers } = await client.systemOne({
+  const { answers, usage } = await client.systemOne({
     state: { incoming, candidates: candidateTexts },
     questions,
   });
+  logUsage(`match:${candidates.length}`, usage);
 
   let best: SameMatch | null = null;
   for (const [i, candidate] of candidates.entries()) {
@@ -246,10 +253,11 @@ export interface Verdict {
 }
 
 export async function runVerdict(client: TypeSafeClient, question: string): Promise<Verdict> {
-  const { answers } = await client.systemOne({
+  const { answers, usage } = await client.systemOne({
     state: { question },
     questions: verdictQuestions,
   });
+  logUsage("verdict", usage);
 
   return {
     noul: answers.answer.noul,
