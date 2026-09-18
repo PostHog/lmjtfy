@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>lmjtfy — let me Jev that for you</title>
+<meta name="description" content="Ask Jev a yes or no question. Jev does not explain, argue, or hedge. It returns a probability.">
+<meta name="color-scheme" content="light">
+<meta property="og:title" content="lmjtfy — let me Jev that for you">
+<meta property="og:description" content="Ask Jev a yes or no question. It returns a probability, not an argument.">
+<meta property="og:type" content="website">
+<link rel="stylesheet" href="/styles.css">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+</head>
+<body>
+
+<main class="stage">
+  <header class="masthead">
+    <h1 class="wordmark">lmjtfy</h1>
+    <p class="expansion">let me Jev that for you</p>
+  </header>
+
+  <form class="ask" id="ask-form" autocomplete="off">
+    <label class="sr-only" for="question">Your yes or no question</label>
+    <input
+      class="ask__input"
+      id="question"
+      name="question"
+      type="text"
+      maxlength="280"
+      placeholder="is it ever ok to reply-all?"
+      aria-describedby="ask-note"
+      required>
+    <button class="ask__go" type="submit" id="ask-go">
+      <span class="ask__go-label">ask</span>
+    </button>
+  </form>
+  <p class="ask__note" id="ask-note">Yes or no questions only. Jev keeps it PG-13.</p>
+
+  <section class="readout" id="readout" aria-live="polite">
+    <div class="gauge" id="gauge">
+      <div class="gauge__scale">
+        <span class="gauge__pole gauge__pole--no">no</span>
+        <div class="gauge__track">
+          <span class="gauge__tick" style="--at:0"></span>
+          <span class="gauge__tick" style="--at:.25"></span>
+          <span class="gauge__tick gauge__tick--mid" style="--at:.5"></span>
+          <span class="gauge__tick" style="--at:.75"></span>
+          <span class="gauge__tick" style="--at:1"></span>
+          <span class="gauge__needle" id="needle"></span>
+        </div>
+        <span class="gauge__pole gauge__pole--yes">yes</span>
+      </div>
+      <p class="gauge__rest" id="gauge-rest">awaiting a question</p>
+    </div>
+
+    <div class="verdict" id="verdict" hidden>
+      <p class="verdict__asked" id="verdict-asked"></p>
+      <p class="verdict__word" id="verdict-word"></p>
+      <dl class="verdict__meta">
+        <div><dt>probability</dt><dd id="verdict-prob">—</dd></div>
+        <div><dt>asked</dt><dd id="verdict-count">—</dd></div>
+        <div><dt>subject</dt><dd id="verdict-topic">—</dd></div>
+        <div><dt>settled</dt><dd id="verdict-settled">—</dd></div>
+      </dl>
+      <p class="verdict__grouped" id="verdict-grouped" hidden></p>
+    </div>
+
+    <p class="status" id="status" hidden><span class="status__text" id="status-text"></span><span class="status__caret"></span></p>
+    <p class="refusal" id="refusal" hidden></p>
+  </section>
+
+  <footer class="colophon">Brought to you by PostHog</footer>
+</main>
+
+<aside class="ledger" id="ledger" aria-label="Recent readings">
+  <div class="ledger__head">
+    <h2 class="ledger__title">readings</h2>
+    <div class="ledger__sort" role="group" aria-label="Sort readings">
+      <button type="button" class="ledger__sort-btn is-on" data-sort="recent">recent</button>
+      <button type="button" class="ledger__sort-btn" data-sort="top">most asked</button>
+    </div>
+  </div>
+  <ol class="ledger__list" id="ledger-list"></ol>
+  <p class="ledger__empty" id="ledger-empty">Nothing asked yet. Go first.</p>
+</aside>
+
+<script src="/app.js" type="module"></script>
+</body>
+</html>

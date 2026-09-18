@@ -1,0 +1,61 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "lmjtfy",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-18",
+  "workers_dev": false,
+  "preview_urls": false,
+
+  // Let Me Jev That For You — lmjtfy.dev
+  "routes": [
+    { "pattern": "lmjtfy.dev", "custom_domain": true },
+    { "pattern": "www.lmjtfy.dev", "custom_domain": true }
+  ],
+
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    // Unmatched paths fall through to the Worker so /api/* is never swallowed.
+    "not_found_handling": "none"
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "lmjtfy",
+      "database_id": "ff254db6-df47-401e-9bc7-6f6aff2ebb8c",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  // Per-IP rate limiting. `period` only accepts 10 or 60 seconds.
+  "unsafe": {
+    "bindings": [
+      {
+        "name": "RL_BURST",
+        "type": "ratelimit",
+        "namespace_id": "1001",
+        "simple": { "limit": 4, "period": 10 }
+      },
+      {
+        "name": "RL_SUSTAINED",
+        "type": "ratelimit",
+        "namespace_id": "1002",
+        "simple": { "limit": 20, "period": 60 }
+      },
+      {
+        "name": "RL_FEED",
+        "type": "ratelimit",
+        "namespace_id": "1003",
+        "simple": { "limit": 30, "period": 10 }
+      }
+    ]
+  },
+
+  "vars": {
+    // Asks per IP per UTC day that actually reach Jev. Cached answers are free.
+    "DAILY_ASK_QUOTA": "60"
+  },
+
+  "observability": { "enabled": true }
+}

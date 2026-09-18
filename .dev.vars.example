@@ -1,0 +1,3 @@
+# Copy to .dev.vars for local development (never commit .dev.vars)
+TYPESAFE_API_KEY="sk-..."
+IP_SALT="some-long-random-string"
