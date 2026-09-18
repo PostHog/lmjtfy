@@ -86,6 +86,51 @@ body {
   margin: 0.85rem 0 0;
 }
 
+/* Jev is somebody else's work, so the name is the credit. */
+.jev-wrap { position: relative; display: inline-block; }
+
+.jev {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px dotted var(--hairline);
+  padding-bottom: 1px;
+  transition: color 200ms ease, border-color 200ms ease;
+}
+
+.jev:hover,
+.jev:focus-visible { color: var(--ink); border-bottom-color: var(--graphite); }
+
+.jev__tip {
+  position: absolute;
+  top: calc(100% + 0.85rem);
+  left: 50%;
+  width: max-content;
+  max-width: 19rem;
+  padding: 0.7rem 0.85rem;
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  /* The masthead sets uppercase and wide tracking; the tooltip is prose. */
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  line-height: 1.55;
+  text-align: left;
+  color: var(--graphite);
+  opacity: 0;
+  visibility: hidden;
+  transform: translate(-50%, -0.3rem);
+  transition: opacity 180ms ease, transform 180ms ease, visibility 180ms;
+  z-index: 10;
+}
+
+.jev-wrap:hover .jev__tip,
+.jev:focus-visible ~ .jev__tip {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0);
+}
+
 /* ------------------------------------------------------------------ ask */
 
 .ask {
@@ -348,6 +393,11 @@ body {
   bottom: 1.5rem;
   left: 50%;
   transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
   font-family: var(--mono);
   font-size: 0.5625rem;
   letter-spacing: 0.16em;
@@ -365,6 +415,8 @@ body {
 }
 
 .colophon__link:hover { color: var(--graphite); }
+
+.colophon__sep { color: var(--hairline); }
 
 .colophon__logo {
   height: 0.75rem;

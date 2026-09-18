@@ -54,7 +54,7 @@ function headline(row: QuestionRow): string {
 function answerSentence(row: QuestionRow): string {
   const percent = Math.round(row.noul * 100);
   const times = `Asked ${row.ask_count} time${row.ask_count === 1 ? "" : "s"}.`;
-  return `${headline(row)} — the probability that the answer is yes is ${row.noul.toFixed(2)} (${percent}%). ${times}`;
+  return `${headline(row)}. The odds of yes are ${row.noul.toFixed(2)}, or ${percent}%. ${times}`;
 }
 
 /** FAQPage over the questions actually present in the document. */
@@ -84,10 +84,10 @@ export interface Decoration {
 export function decorateHtml(response: Response, decoration: Decoration): Response {
   const { rows, focus, focusQuery } = decoration;
 
-  const title = focus ? `${focus.text} — ${headline(focus)}` : "lmjtfy — let me Jev that for you";
+  const title = focus ? `${focus.text} ${headline(focus)}.` : "lmjtfy: let me Jev that for you";
   const description = focus
     ? answerSentence(focus)
-    : "Ask Jev a yes or no question. Jev does not explain, argue, or hedge — it answers with a probability. Identical questions are grouped, so you can see what everyone else asked.";
+    : "Ask Jev anything, as long as the answer is yes or no.";
   const canonical = focusQuery ? `${SITE}/?q=${encodeURIComponent(focusQuery)}` : `${SITE}/`;
 
   const setContent = (value: string) => ({
