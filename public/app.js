@@ -16,6 +16,7 @@ const verdictCount = document.getElementById("verdict-count");
 const verdictTopic = document.getElementById("verdict-topic");
 const verdictSettled = document.getElementById("verdict-settled");
 const verdictGrouped = document.getElementById("verdict-grouped");
+const verdictShare = document.getElementById("verdict-share");
 const status = document.getElementById("status");
 const statusText = document.getElementById("status-text");
 const notice = document.getElementById("notice");
@@ -46,6 +47,8 @@ let sort = "recent";
 let inFlight = false;
 let pollTimer = null;
 let source = null;
+let shown = null;
+let shareTimer = null;
 // The Worker bakes the current readings into the HTML for crawlers and for
 // first paint, so treat a pre-populated list as already loaded rather than
 // flashing skeletons over content that is right there.
@@ -101,8 +104,41 @@ function renderVerdict(question, detail) {
     verdictGrouped.hidden = true;
   }
 
+  shown = question;
+  resetShare();
   verdict.hidden = false;
   notice.hidden = true;
+}
+
+function resetShare() {
+  clearTimeout(shareTimer);
+  verdictShare.classList.remove("is-copied");
+  verdictShare.textContent = "copy link";
+}
+
+/** The Worker resolves ?q= to the stored answer and its social preview. */
+function shareUrl(question) {
+  return `${location.origin}/?q=${encodeURIComponent(question.text)}`;
+}
+
+async function copyShareLink() {
+  if (!shown) return;
+  const question = shown;
+  clearTimeout(shareTimer);
+  try {
+    await navigator.clipboard.writeText(shareUrl(question));
+    verdictShare.classList.add("is-copied");
+    verdictShare.textContent = "link copied";
+    track("question shared", {
+      method: "copy",
+      topic: question.topic,
+      verdict: question.verdict,
+      ask_count: question.askCount,
+    });
+  } catch {
+    verdictShare.textContent = "could not copy. use the address bar";
+  }
+  shareTimer = setTimeout(resetShare, 2400);
 }
 
 /** kind is "refusal", "limit" or "error" — a declined question, a spent
@@ -339,7 +375,7 @@ async function ask(question, source = "typed") {
           settledness: data.question.settledness,
         });
         input.value = "";
-        history.replaceState(null, "", `?q=${encodeURIComponent(data.question.text)}`);
+        history.replaceState(null, "", shareUrl(data.question));
       } else if (event === "notice") {
         hideStatus();
         showNotice(data);
@@ -375,6 +411,8 @@ form.addEventListener("submit", (event) => {
   if (!question || inFlight) return;
   ask(question);
 });
+
+verdictShare.addEventListener("click", copyShareLink);
 
 for (const button of sortButtons) {
   button.addEventListener("click", () => {

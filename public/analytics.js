@@ -3,7 +3,7 @@
  *
  * Autocapture and session replay are both off: this page has one input and one
  * list, so indiscriminate click capture would be noise, and there is nothing in
- * a replay worth the payload. Pageviews plus two explicit events cover it.
+ * a replay worth the payload. Pageviews plus a few explicit events cover it.
  *
  * Loaded from a file rather than inlined because the CSP keeps script-src
  * strict, with no 'unsafe-inline'.
