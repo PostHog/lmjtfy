@@ -16,6 +16,8 @@ const verdictCount = document.getElementById("verdict-count");
 const verdictTopic = document.getElementById("verdict-topic");
 const verdictSettled = document.getElementById("verdict-settled");
 const verdictGrouped = document.getElementById("verdict-grouped");
+const verdictShare = document.getElementById("verdict-share");
+const verdictShareLabel = document.getElementById("verdict-share-label");
 const status = document.getElementById("status");
 const statusText = document.getElementById("status-text");
 const notice = document.getElementById("notice");
@@ -46,6 +48,8 @@ let sort = "recent";
 let inFlight = false;
 let pollTimer = null;
 let source = null;
+let shown = null;
+let shareTimer = null;
 // The Worker bakes the current readings into the HTML for crawlers and for
 // first paint, so treat a pre-populated list as already loaded rather than
 // flashing skeletons over content that is right there.
@@ -101,8 +105,43 @@ function renderVerdict(question, detail) {
     verdictGrouped.hidden = true;
   }
 
+  shown = question;
+  resetShare();
   verdict.hidden = false;
   notice.hidden = true;
+}
+
+const SHARE_LABEL = "copy link";
+
+function resetShare() {
+  clearTimeout(shareTimer);
+  verdictShare.classList.remove("is-copied");
+  verdictShareLabel.textContent = SHARE_LABEL;
+}
+
+/** The Worker resolves ?q= to the stored answer and its social preview. */
+function shareUrl(question) {
+  return `${location.origin}/?q=${encodeURIComponent(question.text)}`;
+}
+
+async function copyShareLink() {
+  if (!shown) return;
+  const question = shown;
+  clearTimeout(shareTimer);
+  try {
+    await navigator.clipboard.writeText(shareUrl(question));
+    verdictShare.classList.add("is-copied");
+    verdictShareLabel.textContent = "link copied";
+    track("question shared", {
+      method: "copy",
+      topic: question.topic,
+      verdict: question.verdict,
+      ask_count: question.askCount,
+    });
+  } catch {
+    verdictShareLabel.textContent = "could not copy. use the address bar";
+  }
+  shareTimer = setTimeout(resetShare, 2400);
 }
 
 /** kind is "refusal", "limit" or "error" — a declined question, a spent
@@ -375,6 +414,8 @@ form.addEventListener("submit", (event) => {
   if (!question || inFlight) return;
   ask(question);
 });
+
+verdictShare.addEventListener("click", copyShareLink);
 
 for (const button of sortButtons) {
   button.addEventListener("click", () => {
