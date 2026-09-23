@@ -17,7 +17,6 @@ const verdictTopic = document.getElementById("verdict-topic");
 const verdictSettled = document.getElementById("verdict-settled");
 const verdictGrouped = document.getElementById("verdict-grouped");
 const verdictShare = document.getElementById("verdict-share");
-const verdictShareLabel = document.getElementById("verdict-share-label");
 const status = document.getElementById("status");
 const statusText = document.getElementById("status-text");
 const notice = document.getElementById("notice");
@@ -111,12 +110,10 @@ function renderVerdict(question, detail) {
   notice.hidden = true;
 }
 
-const SHARE_LABEL = "copy link";
-
 function resetShare() {
   clearTimeout(shareTimer);
   verdictShare.classList.remove("is-copied");
-  verdictShareLabel.textContent = SHARE_LABEL;
+  verdictShare.textContent = "copy link";
 }
 
 /** The Worker resolves ?q= to the stored answer and its social preview. */
@@ -131,7 +128,7 @@ async function copyShareLink() {
   try {
     await navigator.clipboard.writeText(shareUrl(question));
     verdictShare.classList.add("is-copied");
-    verdictShareLabel.textContent = "link copied";
+    verdictShare.textContent = "link copied";
     track("question shared", {
       method: "copy",
       topic: question.topic,
@@ -139,7 +136,7 @@ async function copyShareLink() {
       ask_count: question.askCount,
     });
   } catch {
-    verdictShareLabel.textContent = "could not copy. use the address bar";
+    verdictShare.textContent = "could not copy. use the address bar";
   }
   shareTimer = setTimeout(resetShare, 2400);
 }
@@ -378,7 +375,7 @@ async function ask(question, source = "typed") {
           settledness: data.question.settledness,
         });
         input.value = "";
-        history.replaceState(null, "", `?q=${encodeURIComponent(data.question.text)}`);
+        history.replaceState(null, "", shareUrl(data.question));
       } else if (event === "notice") {
         hideStatus();
         showNotice(data);
